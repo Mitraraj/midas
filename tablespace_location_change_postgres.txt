@@ -1,0 +1,148 @@
+###check tablespace from OS level
+postgres@midasdbsrv:~$ ps -ef|grep pa
+postgres   42503       1  0 07:38 ?        00:00:00 /usr/lib/postgresql/16/bin/postgres -D /data/16/pa
+
+postgres@midasdbsrv:~$ cd /data/16/pa/pg_tblspc/
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ ls -lrt
+total 0
+lrwxrwxrwx 1 postgres postgres 19 Nov  6 06:46 16388 -> /FRA/pa/pa_tbs/data
+lrwxrwxrwx 1 postgres postgres 18 Nov  6 06:46 16389 -> /FRA/pa/pa_tbs/log
+
+###check tablespace from database level
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ psql -U postgres -d pa -p 5435
+psql (16.10 (Ubuntu 16.10-1.pgdg24.04+1))
+Type "help" for help.
+
+pa=# \l+ pa
+                                                                     List of databases
+ Name |  Owner   | Encoding | Locale Provider |   Collate   |    Ctype    | ICU Locale | ICU Rules | Access privileges |  Size   | Tablespace | Description 
+------+----------+----------+-----------------+-------------+-------------+------------+-----------+-------------------+---------+------------+-------------
+ pa   | postgres | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           |                   | 7588 kB | patbs01    | 
+(1 row)
+
+pa=# \x
+Expanded display is on.
+pa=# SELECT
+    spcname AS tablespace_name,
+    pg_tablespace_location(oid) AS location
+FROM pg_tablespace;
+-[ RECORD 1 ]---+--------------------
+tablespace_name | pg_default
+location        | 
+-[ RECORD 2 ]---+--------------------
+tablespace_name | pg_global
+location        | 
+-[ RECORD 3 ]---+--------------------
+tablespace_name | patbs01
+location        | /FRA/pa/pa_tbs/data
+-[ RECORD 4 ]---+--------------------
+tablespace_name | palog01
+location        | /FRA/pa/pa_tbs/log
+
+pa=# exit
+
+### Create tablespace directory for each cluster and assign necessary permission.
+
+postgres@midasdbsrv:/$ mkdir -p /data/tablespace/pa/pa_tbs/data
+postgres@midasdbsrv:/$ chown -R postgres:postgres /data/tablespace/pa/pa_tbs/data
+postgres@midasdbsrv:/$ mkdir -p /data/tablespace/pa/pa_tbs/log
+postgres@midasdbsrv:/$ chown -R postgres:postgres /data/tablespace/pa/pa_tbs/log
+postgres@midasdbsrv:/$ chmod 700 /data/tablespace/pa/pa_tbs/data
+postgres@midasdbsrv:/$ chmod 700 /data/tablespace/pa/pa_tbs/log
+
+### shutdown necessary cluster
+postgres@midasdbsrv:/$ sudo systemctl stop postgresql@pa
+
+###Move tablespace location to targeted location.
+postgres@midasdbsrv:/$ cd /FRA/pa/pa_tbs/data/
+postgres@midasdbsrv:/FRA/pa/pa_tbs/data$ ls -lrt
+total 4
+drwxrwxr-x 3 postgres postgres 4096 Nov  6 06:46 PG_16_202307071
+
+postgres@midasdbsrv:/FRA/pa/pa_tbs/data$ 
+mv /FRA/pa/pa_tbs/data/* /data/tablespace/pa/pa_tbs/data/
+
+postgres@midasdbsrv:/FRA/pa/pa_tbs/data$ ls -lrt
+total 0
+
+### Remove the old symlink and create a new one with the same OID
+postgres@midasdbsrv:/FRA/pa/pa_tbs/data$ cd /data/16/pa/pg_tblspc/
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ ls -lrt
+total 0
+lrwxrwxrwx 1 postgres postgres 19 Nov  6 06:46 16388 -> /FRA/pa/pa_tbs/data
+lrwxrwxrwx 1 postgres postgres 18 Nov  6 06:46 16389 -> /FRA/pa/pa_tbs/log
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ rm 16388
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ ls -lrt
+total 0
+
+lrwxrwxrwx 1 postgres postgres 18 Nov  6 06:46 16389 -> /FRA/pa/pa_tbs/log
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ ln -s /data/tablespace/pa/pa_tbs/data 16388
+
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ ls -lrt
+total 0
+lrwxrwxrwx 1 postgres postgres 18 Nov  6 06:46 16389 -> /FRA/pa/pa_tbs/log
+lrwxrwxrwx 1 postgres postgres 31 Nov  6 08:10 16388 -> /data/tablespace/pa/pa_tbs/data
+
+### Do the same log tablespace as well. 
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ mv /FRA/pa/pa_tbs/log/* /data/tablespace/pa/pa_tbs/log/
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ ls -lrt
+total 0
+lrwxrwxrwx 1 postgres postgres 18 Nov  6 06:46 16389 -> /FRA/pa/pa_tbs/log
+lrwxrwxrwx 1 postgres postgres 31 Nov  6 08:10 16388 -> /data/tablespace/pa/pa_tbs/data
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ rm 16389
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ ln -s /data/tablespace/pa/pa_tbs/log 16389
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ 
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ ls -lrt
+total 0
+lrwxrwxrwx 1 postgres postgres 31 Nov  6 08:10 16388 -> /data/tablespace/pa/pa_tbs/data
+lrwxrwxrwx 1 postgres postgres 30 Nov  6 08:12 16389 -> /data/tablespace/pa/pa_tbs/log
+
+
+### Once completed for both tablespaces, start the cluster and verify tablespace location.
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ sudo systemctl start postgresql@pa
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ sudo systemctl status postgresql@pa
+● postgresql@pa.service - PostgreSQL database server (pa)
+     Loaded: loaded (/etc/systemd/system/postgresql@pa.service; enabled; preset: enabled)
+     Active: active (running) since Thu 2025-11-06 08:12:27 UTC; 9s ago
+    Process: 43718 ExecStart=/usr/lib/postgresql/16/bin/pg_ctl -D /data/16/pa start (code=exited, status=0/SUCCESS)
+   Main PID: 43721 (postgres)
+      Tasks: 8 (limit: 77066)
+     Memory: 24.1M (peak: 25.9M)
+        CPU: 83ms
+     CGroup: /system.slice/system-postgresql.slice/postgresql@pa.service
+             ├─43721 /usr/lib/postgresql/16/bin/postgres -D /data/16/pa
+             ├─43722 "postgres: logger "
+             ├─43723 "postgres: checkpointer "
+             ├─43724 "postgres: background writer "
+             ├─43726 "postgres: walwriter "
+             ├─43727 "postgres: autovacuum launcher "
+             ├─43728 "postgres: archiver "
+             └─43729 "postgres: logical replication launcher "
+
+Nov 06 08:12:27 midasdbsrv systemd[1]: Starting postgresql@pa.service - PostgreSQL database server (pa)...
+Nov 06 08:12:27 midasdbsrv pg_ctl[43718]: waiting for server to start....
+Nov 06 08:12:27 midasdbsrv pg_ctl[43721]: 2025-11-06 08:12:27.791 UTC [43721] LOG:  pgaudit extension initialized
+Nov 06 08:12:27 midasdbsrv pg_ctl[43721]: 2025-11-06 08:12:27.806 UTC [43721] LOG:  redirecting log output to logging collector process
+Nov 06 08:12:27 midasdbsrv pg_ctl[43721]: 2025-11-06 08:12:27.806 UTC [43721] HINT:  Future log output will appear in directory "/data/16/pa/log".
+Nov 06 08:12:27 midasdbsrv pg_ctl[43718]:  done
+Nov 06 08:12:27 midasdbsrv pg_ctl[43718]: server started
+Nov 06 08:12:27 midasdbsrv systemd[1]: Started postgresql@pa.service - PostgreSQL database server (pa).
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ 
+
+postgres@midasdbsrv:/data/16/pa/pg_tblspc$ psql -U postgres -d pa -p 5435
+psql (16.10 (Ubuntu 16.10-1.pgdg24.04+1))
+Type "help" for help.
+
+pa=# SELECT
+    spcname AS tablespace_name,
+    pg_tablespace_location(oid) AS location
+FROM pg_tablespace;
+ tablespace_name |            location             
+-----------------+---------------------------------
+ pg_default      | 
+ pg_global       | 
+ patbs01         | /data/tablespace/pa/pa_tbs/data
+ palog01         | /data/tablespace/pa/pa_tbs/log
+(4 rows)
+
+####Completed for PA##########
