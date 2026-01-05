@@ -1,0 +1,70 @@
+startup: The WAL sender is still starting up.
+catchup: The standby instance is catching up with the primary instance.
+streaming: The changes are being successfully streamed from primary to standby server and the standby server is caught up with the primary.
+backup: The WAL sender is sending a backup.
+stopping: This WAL sender is stopping.
+
+On primary:
+
+show listen_addresses;
+show wal_level;
+show max_wal_senders;
+show wal_keep_size;
+show hot_standby;
+
+alter user postgres password 'PassW0rd321';
+
+On standby: 
+
+rm -rf /var/lib/postgresql/16/lab 
+rm -rf /FRA/lab/lab_tbs/data/*
+rm -rf /FRA/lab/lab_tbs/log/*
+
+CREATE USER replicator REPLICATION LOGIN ENCRYPTED PASSWORD 'replica';
+
+pg_hba.conf
+host    replication     replicator      10.56.10.76/32      	trust
+host    replication     replicator      10.56.10.75/32      	trust 
+
+pg_basebackup -h 192.168.130.198 -U replicator -p 5433 -Fp -Xs -P -R -D /var/lib/postgresql/16/lab
+
+
+Monitoring Replication
+
+On primary:
+
+ps -ef|grep sender
+
+
+SELECT application_name, state, sync_state,
+       pg_wal_lsn_diff(sent_lsn, replay_lsn) AS byte_lag
+FROM pg_stat_replication;
+
+SELECT
+    application_name,
+    state,
+    sync_state,
+    pg_wal_lsn_diff(sent_lsn, replay_lsn) AS byte_lag,
+    pg_size_pretty(pg_wal_lsn_diff(sent_lsn, replay_lsn)) AS pretty_lag,
+    write_lag,
+    flush_lag,
+    replay_lag,
+    client_addr,
+    backend_start
+FROM pg_stat_replication;
+
+On standby:
+
+ps -ef|grep receiver
+
+SELECT pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn(),
+       pg_last_xact_replay_timestamp(), now() - pg_last_xact_replay_timestamp();
+	   
+SELECT                                                 
+    now() AS current_time,
+    pg_last_wal_receive_lsn() AS received_lsn,
+    pg_last_wal_replay_lsn() AS replayed_lsn,
+    pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn()) AS byte_lag,
+    pg_size_pretty(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn())) AS pretty_lag,
+    pg_last_xact_replay_timestamp() AS last_replay_ts,
+    now() - pg_last_xact_replay_timestamp() AS replay_delay;	   
