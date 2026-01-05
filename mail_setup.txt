@@ -1,0 +1,34 @@
+apt install -y msmtp
+
+sudo vi /etc/msmtprc
+
+# Set default values for all accounts
+defaults
+auth           on
+tls            on
+tls_starttls   on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        /var/log/msmtp.log
+ 
+# Define the account
+account        office365
+host           smtp.office365.com
+port           587
+from           support@midastechnologies.com.np
+user           support@midastechnologies.com.np
+password       Su660rt!23$
+ 
+# Set a default account
+account default : office365
+
+
+-------------------
+
+sudo chmod 775 /etc/msmtprc
+sudo touch /var/log/msmtp.log
+sudo chmod 775 /var/log/msmtp.log
+
+
+TEST: 
+echo "hello" | msmtp -a default mitraraj.katwal@midastechnologies.com.np
+
